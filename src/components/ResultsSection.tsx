@@ -1,21 +1,27 @@
-import { Download, Trash2, PlayCircle, Music, FileCheck, AlertCircle, AudioLines, Sparkles } from 'lucide-react';
+import { Download, Trash2, PlayCircle, Music, FileCheck, AudioLines, Sparkles, FileText, Settings2 } from 'lucide-react';
 import type { QueuedFile } from '../types';
 
 interface ResultsSectionProps {
   files: QueuedFile[];
   onDelete: (id: string) => void;
   onDownload: (id: string) => void;
+  onOpenEdit: (id: string) => void;
 }
 
-export const ResultsSection = ({ files, onDelete, onDownload }: ResultsSectionProps) => {
+export const ResultsSection = ({ 
+  files, 
+  onDelete, 
+  onDownload, 
+  onOpenEdit 
+}: ResultsSectionProps) => {
   return (
-    <div className="flex flex-col gap-6 bg-white dark:bg-slate-800/50 p-8 rounded-xl border border-primary/10 h-full">
+    <div className="flex flex-col gap-6 bg-white dark:bg-slate-800/50 p-6 md:p-8 rounded-xl border border-primary/10 h-full max-h-[600px]">
       <div className="flex items-center gap-2 mb-2">
         <PlayCircle className="text-primary w-5 h-5" />
         <h3 className="text-lg font-bold">Your Audio Queue</h3>
       </div>
       
-      <div className="flex-1 flex flex-col gap-4 overflow-y-auto max-h-[400px] pr-2">
+      <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar">
         {files.length === 0 ? (
           <div className="flex-1 flex flex-col justify-center items-center gap-4 text-center opacity-40 py-12">
             <Music className="w-12 h-12" />
@@ -25,76 +31,104 @@ export const ResultsSection = ({ files, onDelete, onDownload }: ResultsSectionPr
           files.map((file) => (
             <div 
               key={file.id} 
-              className={`p-4 rounded-lg border transition-all ${
+              className={`group relative rounded-xl border transition-all overflow-hidden ${
                 file.status === 'ZPRACOVÁVÁM' 
                   ? 'border-primary bg-primary/5 ring-1 ring-primary/20' 
-                  : 'border-primary/5 bg-background-light/50 dark:bg-background-dark/30'
+                  : 'border-primary/5 bg-slate-50 dark:bg-slate-900/40 hover:border-primary/20 hover:shadow-md'
               }`}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex flex-col min-w-0 pr-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-primary truncate max-w-[180px]">
-                    {file.file.name}
-                  </span>
-                  <span className="text-[10px] opacity-60">
-                    {file.status === 'HOTOVO' ? 'Converted • Processed' : 
-                     file.status === 'ZPRACOVÁVÁM' ? `Processing • ${file.progress}%` : 
-                     file.status === 'CHYBA' ? 'Error occurred' : 'In Queue'}
-                  </span>
+              <div 
+                className="p-4 flex items-center justify-between cursor-pointer"
+                onClick={() => onOpenEdit(file.id)}
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className={`p-2.5 rounded-xl transition-colors ${
+                    file.status === 'HOTOVO' 
+                      ? 'bg-green-500/10 text-green-500' 
+                      : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white'
+                  }`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold uppercase tracking-wider truncate max-w-[140px] md:max-w-[200px]">
+                      {file.file.name}
+                    </span>
+                    <span className="text-[10px] font-bold opacity-50 flex items-center gap-1.5 mt-0.5">
+                      {file.status === 'HOTOVO' && <span className="text-green-500">READY</span>}
+                      {file.status === 'ZPRACOVÁVÁM' && <span className="text-primary animate-pulse">GENERATING {file.progress}%</span>}
+                      {file.status === 'OPTIMALIZUJI' && <span className="text-primary animate-pulse">AI ANALYZING...</span>}
+                      {file.status === 'ČEKÁ' && <span>IN QUEUE</span>}
+                      {file.status === 'CHYBA' && <span className="text-red-500 uppercase tracking-tighter">ERROR</span>}
+                    </span>
+                  </div>
                 </div>
-                {file.status === 'OPTIMALIZUJI' ? (
-                   <span className="flex items-center justify-center text-primary animate-pulse">
-                     <Sparkles className="w-6 h-6" />
-                   </span>
-                ) : file.status === 'ZPRACOVÁVÁM' ? (
-                   <span className="flex items-center justify-center text-primary animate-pulse">
-                     <AudioLines className="w-6 h-6" />
-                   </span>
-                ) : file.status === 'HOTOVO' ? (
-                   <FileCheck className="text-green-500 w-6 h-6" />
-                ) : file.status === 'CHYBA' ? (
-                   <AlertCircle className="text-red-500 w-6 h-6" />
-                ) : (
-                   <div className="w-6 h-6 bg-slate-100 rounded-full"></div>
-                )}
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pr-2">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onOpenEdit(file.id); }}
+                      className="p-1.5 hover:bg-primary/10 text-primary rounded-lg transition-all"
+                      title="Edit Transcription"
+                    >
+                      <Settings2 className="w-4 h-4" />
+                    </button>
+                    {file.status === 'HOTOVO' ? (
+                      <button 
+                         onClick={(e) => { e.stopPropagation(); onDownload(file.id); }}
+                         className="p-1.5 hover:bg-primary/10 text-primary rounded-lg transition-all"
+                      >
+                         <Download className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
+                        disabled={file.status === 'ZPRACOVÁVÁM'}
+                        className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-center w-8">
+                    {file.status === 'OPTIMALIZUJI' ? (
+                       <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+                    ) : file.status === 'ZPRACOVÁVÁM' ? (
+                       <AudioLines className="w-5 h-5 text-primary animate-pulse" />
+                    ) : file.status === 'HOTOVO' ? (
+                       <FileCheck className="text-green-500 w-5 h-5" />
+                    ) : (
+                       <div className="w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700" />
+                    )}
+                  </div>
+                </div>
               </div>
 
               {(file.status === 'ZPRACOVÁVÁM' || file.status === 'OPTIMALIZUJI') && (
-                <div className="w-full h-1 bg-primary/10 rounded-full mb-3 overflow-hidden">
-                  <div 
-                    className="h-full bg-primary transition-all duration-300" 
-                    style={{ width: file.status === 'OPTIMALIZUJI' ? '100%' : `${file.progress}%` }}
-                  ></div>
+                <div className="px-4 pb-0.5">
+                  <div className="w-full h-1 bg-primary/5 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-300 shadow-[0_0_10px_rgba(19,127,236,0.3)]" 
+                      style={{ width: file.status === 'OPTIMALIZUJI' ? '100%' : `${file.progress}%` }}
+                    ></div>
+                  </div>
                 </div>
               )}
-
-              <div className="flex items-center justify-end gap-3 mt-2">
-                {file.status === 'HOTOVO' ? (
-                  <button 
-                    onClick={() => onDownload(file.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-md transition-all text-[10px] font-bold"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Download
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => onDelete(file.id)}
-                    disabled={file.status === 'ZPRACOVÁVÁM'}
-                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all disabled:opacity-30"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
             </div>
           ))
         )}
       </div>
       
-      {files.some(f => f.status === 'HOTOVO') && (
-        <p className="text-[10px] opacity-50 text-center">
-          Downloads are ready for your processed documents.
-        </p>
+      {files.length > 0 && (
+        <div className="pt-4 border-t border-primary/5 flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase opacity-30 tracking-widest leading-none">
+            Click any file to edit
+          </p>
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 dark:bg-slate-900 border border-primary/5">
+             <div className="size-1 rounded-full bg-green-500" />
+             <span className="text-[9px] font-medium opacity-60">System Ready</span>
+          </div>
+        </div>
       )}
     </div>
   );

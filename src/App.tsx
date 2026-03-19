@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
+import './firebase/firebase'; // Initialize Firebase
 import { FileUploader } from './components/FileUploader';
 import { VoiceSettings } from './components/VoiceSettings';
 import { ResultsSection } from './components/ResultsSection';
+import { TranscriptionModal } from './components/TranscriptionModal';
+import { ProfileModal } from './components/ProfileModal';
+import { AuthModal } from './components/AuthModal';
+import { AuthButton } from './components/AuthButton';
+import { SavedTranscriptions } from './components/SavedTranscriptions';
 import { extractTextFromPdf } from './utils/PdfProcessor';
 import { TtsEngine } from './utils/TtsEngine';
 import { refineTextForTts } from './utils/AiProcessor';
@@ -9,6 +15,10 @@ import type { QueuedFile } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { FileText, ShieldCheck } from 'lucide-react';
+import { auth, db } from './firebase/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 function App() {
   const [files, setFiles] = useState<QueuedFile[]>([]);
@@ -16,6 +26,10 @@ function App() {
   const [selectedVoice, setSelectedVoice] = useState<string>('');
   const [speed, setSpeed] = useState(1.0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   
   const ttsEngine = useRef<TtsEngine | null>(null);
 
@@ -26,8 +40,8 @@ function App() {
       const availableVoices = ttsEngine.current?.getVoices() || [];
       setVoices(availableVoices);
       if (availableVoices.length > 0 && !selectedVoice) {
-        const defaultVoice = availableVoices.find(v => v.lang.startsWith('cs')) || 
-                             availableVoices.find(v => v.lang.startsWith('en')) || 
+        const defaultVoice = availableVoices.find(v => v.voiceURI === 'google-cs') || 
+                             availableVoices.find(v => v.voiceURI === 'google-en') || 
                              availableVoices[0];
         setSelectedVoice(defaultVoice.voiceURI);
       }
@@ -37,7 +51,17 @@ function App() {
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
   }, [selectedVoice]);
+
+  const updateFileStatus = (id: string, updates: Partial<QueuedFile>) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
 
   const handleFilesSelect = (selectedFiles: File[]) => {
     const newFiles: QueuedFile[] = selectedFiles.map(file => ({
@@ -79,6 +103,22 @@ function App() {
 
         updateFileStatus(fileItem.id, { status: 'HOTOVO', progress: 100, blob });
 
+        // Automatic Save to Firestore if user is logged in
+        if (user) {
+          try {
+            await addDoc(collection(db, 'transcriptions'), {
+              userId: user.uid,
+              userEmail: user.email,
+              fileName: fileItem.file.name,
+              text: optimizedText,
+              createdAt: serverTimestamp(),
+            });
+            console.log(`App: Soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
+          } catch (saveError) {
+            console.error("Error auto-saving to profile:", saveError);
+          }
+        }
+
         confetti({
           particleCount: 40,
           spread: 50,
@@ -93,12 +133,58 @@ function App() {
     setIsProcessing(false);
   };
 
-  const updateFileStatus = (id: string, updates: Partial<QueuedFile>) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  const handleTextChange = (id: string, text: string) => {
+    updateFileStatus(id, { text });
+  };
+
+  const handleRegenerate = async (id: string) => {
+    const fileItem = files.find(f => f.id === id);
+    if (!fileItem || !ttsEngine.current) return;
+
+    updateFileStatus(id, { status: 'ZPRACOVÁVÁM', progress: 0 });
+
+    try {
+      const blob = await ttsEngine.current.speakAndRecord(fileItem.text, selectedVoice, (p) => {
+        updateFileStatus(fileItem.id, { progress: Math.round(p * 100) });
+      });
+
+      updateFileStatus(id, { status: 'HOTOVO', progress: 100, blob });
+
+      // Automatic Save to Firestore if user is logged in
+      if (user) {
+        try {
+          await addDoc(collection(db, 'transcriptions'), {
+            userId: user.uid,
+            userEmail: user.email,
+            fileName: fileItem.file.name,
+            text: fileItem.text,
+            createdAt: serverTimestamp(),
+          });
+          console.log(`App: Regerovaný soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
+        } catch (saveError) {
+          console.error("Error auto-saving to profile:", saveError);
+        }
+      }
+
+      confetti({
+        particleCount: 20,
+        spread: 30,
+        origin: { y: 0.7 },
+        colors: ['#137fec', '#ffffff']
+      });
+    } catch (error) {
+      console.error('Error regenerating:', error);
+      updateFileStatus(id, { status: 'CHYBA' });
+    }
   };
 
   const handleRemoveFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
+    if (editingFileId === id) setEditingFileId(null);
+  };
+
+  const handleOpenEdit = (id: string) => {
+    setEditingFileId(id);
   };
 
   const handleDownloadMp3 = (id: string) => {
@@ -114,75 +200,149 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+
+  const handleLoadSaved = (text: string, fileName: string) => {
+    const virtualId = Math.random().toString(36).substring(7);
+    const newFile: QueuedFile = {
+      id: virtualId,
+      file: { name: fileName, size: 0 } as any, // Mock file object
+      text,
+      status: 'HOTOVO',
+      progress: 100
+    };
+    setFiles(prev => [...prev, newFile]);
+    setEditingFileId(virtualId);
+    
+    // Smooth scroll to top to see the new entry
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const pendingFiles = files.filter(f => f.status === 'ČEKÁ' || f.status === 'ZPRACOVÁVÁM').length;
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark">
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 transition-colors">
       <div className="layout-container flex h-full grow flex-col">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-primary/10 bg-background-light dark:bg-background-dark px-6 md:px-20 py-4 sticky top-0 z-10">
+        <header className="flex items-center justify-between border-b border-primary/10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-6 md:px-20 py-4 sticky top-0 z-50">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-10 bg-primary/10 text-primary rounded-lg">
-              <FileText className="w-6 h-6" />
+            <div className="flex items-center justify-center size-10 bg-primary/10 rounded-lg">
+              <FileText className="w-6 h-6 text-primary" />
             </div>
             <h2 className="text-xl font-bold tracking-tight">PDF to Voice</h2>
           </div>
-          <div className="hidden md:flex items-center gap-4 text-sm font-medium opacity-70">
-            <span>Fast. Secure. Quality AI Voices.</span>
+          
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-4 text-sm font-medium opacity-70 mr-4">
+              <span>Fast. Secure. Quality AI Voices.</span>
+            </div>
+            <AuthButton 
+              onOpenAuth={() => setIsAuthModalOpen(true)} 
+              onOpenProfile={() => setIsProfileModalOpen(true)}
+            />
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col items-center justify-center px-4 py-12 max-w-4xl mx-auto w-full">
-          {/* Hero Text */}
+        <main className="flex-1 flex flex-col items-center justify-center px-4 py-12 max-w-5xl mx-auto w-full">
+          {/* Hero Section */}
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-10"
+            className="text-center mb-12"
           >
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/5 border border-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest mb-4">
+              <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+              Powered by Google Gemini AI
+            </div>
+            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-gradient-to-r from-slate-900 via-primary to-slate-900 dark:from-white dark:via-primary dark:to-white bg-clip-text text-transparent leading-tight">
               Turn your documents into <span className="text-primary">audio</span>
             </h1>
-            <p className="text-lg opacity-80">Upload your PDF and let our AI read it aloud for you in high quality.</p>
+            <p className="text-base md:text-lg opacity-60 max-w-2xl mx-auto">
+              Transform PDFs into high-quality artificial speech. Cleaned, structured, and read with precision by advanced AI voices.
+            </p>
           </motion.div>
 
-          {/* Upload Section */}
-          <FileUploader onFilesSelect={handleFilesSelect} />
+          {/* Main Controls */}
+          <div className="w-full space-y-12">
+            <FileUploader onFilesSelect={handleFilesSelect} />
 
-          <AnimatePresence>
-            {files.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full"
+            <AnimatePresence>
+              {files.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+                >
+                  <div className="lg:col-span-12 xl:col-span-5">
+                    <VoiceSettings 
+                      voices={voices}
+                      selectedVoice={selectedVoice}
+                      onVoiceChange={setSelectedVoice}
+                      speed={speed}
+                      onSpeedChange={setSpeed}
+                      onConvert={processQueue}
+                      isProcessing={isProcessing}
+                      disabled={isProcessing}
+                      canConvert={pendingFiles > 0}
+                    />
+                  </div>
+                  
+                  <div className="lg:col-span-12 xl:col-span-7">
+                    <ResultsSection 
+                      files={files}
+                      onDelete={handleRemoveFile}
+                      onDownload={handleDownloadMp3}
+                      onOpenEdit={handleOpenEdit}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* History Section */}
+            {user && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="pt-12 border-t border-slate-200 dark:border-slate-800"
               >
-                <VoiceSettings 
-                  voices={voices}
-                  selectedVoice={selectedVoice}
-                  onVoiceChange={setSelectedVoice}
-                  speed={speed}
-                  onSpeedChange={setSpeed}
-                  onConvert={processQueue}
-                  isProcessing={isProcessing}
-                  disabled={isProcessing}
-                  canConvert={pendingFiles > 0}
-                />
-                
-                <ResultsSection 
-                  files={files}
-                  onDelete={handleRemoveFile}
-                  onDownload={handleDownloadMp3}
+                <SavedTranscriptions 
+                  userId={user.uid} 
+                  onLoadTranscription={handleLoadSaved} 
                 />
               </motion.div>
             )}
-          </AnimatePresence>
+          </div>
 
-          <footer className="mt-20 py-8 border-t border-primary/5 w-full text-center">
-            <p className="text-sm opacity-50 flex items-center justify-center gap-2">
-              <ShieldCheck className="w-4 h-4" /> Your files are processed securely and deleted after conversion.
+          <footer className="mt-20 py-10 border-t border-primary/5 w-full text-center">
+            <p className="text-xs opacity-40 flex items-center justify-center gap-2">
+              <ShieldCheck className="w-4 h-4" /> Your data is processed securely via Google Cloud. No permanent storage unless saved to profile.
             </p>
           </footer>
         </main>
       </div>
+
+      {/* Overlays */}
+      <TranscriptionModal 
+        file={files.find(f => f.id === editingFileId) || null}
+        onClose={() => setEditingFileId(null)}
+        onTextChange={handleTextChange}
+        onRegenerate={handleRegenerate}
+        onDownload={handleDownloadMp3}
+        onDelete={handleRemoveFile}
+      />
+
+      <AuthModal 
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      {user && (
+        <ProfileModal 
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          user={user}
+        />
+      )}
     </div>
   );
 }

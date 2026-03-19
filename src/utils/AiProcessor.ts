@@ -1,11 +1,10 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-
-const API_KEY = "AIzaSyByTdx3HoO-ORweOs0UVnRWnU0VIrVOA80";
-const genAI = new GoogleGenerativeAI(API_KEY);
+import { getGenerativeModel, HarmCategory, HarmBlockThreshold } from "firebase/ai";
+import { ai } from "../firebase/firebase";
 
 export async function refineTextForTts(text: string): Promise<string> {
   console.log("AiProcessor: Spouštím optimalizaci textu...", { length: text.length });
-  const model = genAI.getGenerativeModel({ 
+  
+  const model = getGenerativeModel(ai, { 
     model: "gemini-2.5-flash",
     safetySettings: [
       {
@@ -33,10 +32,13 @@ export async function refineTextForTts(text: string): Promise<string> {
     
     Pravidla:
     1. Odstraň nesmyslné znaky, rozbité konce řádků a artefakty z PDF.
-    2. Rozepiš zkratky (např. "cca" na "přibližně", "atd." na "a tak dále").
-    3. Formátuj data a čísla tak, aby se dala snadno přečíst (např. "1.1.2024" na "prvního ledna dva tisíce dvacet čtyři").
-    4. Zachovej smysl a tón textu, neprováděj žádné shrnutí, pouze optimalizuj pro přednes.
-    5. Vrať POUZE opravený text bez jakýchkoliv tvých komentářů.
+    2. Identifikuj nadpisy a podnadpisy na základě jejich struktury v textu (velká písmena, odsazení, osamocené řádky).
+    3. Před každý HLAVNÍ nadpis (např. název kapitoly) přidej text "Nová kapitola: ".
+    4. Před každý PODNADPIS (mezinadpis sekce) přidej text "Nová podkapitola: ".
+    5. Rozepiš zkratky (např. "cca" na "přibližně", "atd." na "a tak dále").
+    6. Formátuj data a čísla tak, aby se dala snadno přečíst.
+    7. Zachovej smysl a tón textu, neprováděj žádné shrnutí.
+    8. Vrať POUZE opravený text bez jakýchkoliv tvých komentářů.
 
     Text k optimalizaci:
     ${text}
@@ -57,8 +59,8 @@ export async function refineTextForTts(text: string): Promise<string> {
     // Odstranění případných markdown bloků (např. ```text ... ```)
     refinedText = refinedText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '');
     
-    // Normalizace mezer a konců řádků (odstranění vícenásobných mezer a ticha)
-    refinedText = refinedText.replace(/\s+/g, ' ').trim();
+    // Normalizace mezer při zachování konců řádků pro lepší strukturu
+    refinedText = refinedText.replace(/[ \t]+/g, ' ').trim();
     
     console.log("AiProcessor: Optimalizace úspěšně dokončena.");
     return refinedText;

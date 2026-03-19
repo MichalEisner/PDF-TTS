@@ -7,9 +7,25 @@ export class TtsEngine {
   }
 
   getVoices(): SpeechSynthesisVoice[] {
-    // We return a small subset or mock voices to keep the UI compatible 
-    // while we use the Google Translate API under the hood
-    return window.speechSynthesis.getVoices();
+    // We return a simplified set of "Standard AI Voices" to match 
+    // the Google Translate API we're using, avoiding confusion 
+    // with local system voice names like "Jakub".
+    return [
+      { 
+        name: 'Standard AI Voice (Czech)', 
+        lang: 'cs-CZ', 
+        voiceURI: 'google-cs',
+        default: true,
+        localService: false
+      } as SpeechSynthesisVoice,
+      { 
+        name: 'Standard AI Voice (English)', 
+        lang: 'en-US', 
+        voiceURI: 'google-en',
+        default: false,
+        localService: false
+      } as SpeechSynthesisVoice
+    ];
   }
 
   async speakAndRecord(text: string, voiceURI: string, onProgress: (progress: number) => void): Promise<Blob> {
@@ -22,8 +38,8 @@ export class TtsEngine {
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      // Route through local CORS proxy
-      const url = `http://localhost:8010/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
+      // Route through local CORS proxy (configured in vite.config.ts)
+      const url = `/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
       
       try {
         const response = await fetch(url);
@@ -46,8 +62,8 @@ export class TtsEngine {
 
   private splitText(text: string, maxLength: number): string[] {
     const chunks: string[] = [];
-    const cleanText = text.replace(/[*#]/g, '').replace(/\s+/g, ' ').trim();
-    console.log("TtsEngine: Dělím text na bloky pro plynulé čtení. Celková délka:", cleanText.length);
+    const cleanText = text.replace(/[*#]/g, '').replace(/[ \t]+/g, ' ').trim();
+    console.log("TtsEngine: Dělím text na bloky. Celková délka:", cleanText.length);
     
     let currentPos = 0;
     while (currentPos < cleanText.length) {
@@ -62,12 +78,17 @@ export class TtsEngine {
       const lookbackLimit = Math.max(currentPos, endPos - 50); // Look back up to 50 chars for punctuation
       let bestBreak = -1;
 
-      // Priority 1: Sentence endings (. ! ?)
-      const sentenceEnd = cleanText.substring(lookbackLimit, endPos).search(/[.!?]\s/);
-      if (sentenceEnd !== -1) {
-        bestBreak = lookbackLimit + sentenceEnd + 1;
+      // Priority 0: Newlines (best for chapters/headings)
+      const newlineIdx = cleanText.substring(lookbackLimit, endPos).indexOf('\n');
+      if (newlineIdx !== -1) {
+        bestBreak = lookbackLimit + newlineIdx + 1;
       } else {
-        // Priority 2: Clauses (, ; :)
+        // Priority 1: Sentence endings (. ! ?)
+        const sentenceEnd = cleanText.substring(lookbackLimit, endPos).search(/[.!?]\s/);
+        if (sentenceEnd !== -1) {
+          bestBreak = lookbackLimit + sentenceEnd + 1;
+        } else {
+          // Priority 2: Clauses (, ; :)
         const clauseEnd = cleanText.substring(lookbackLimit, endPos).search(/[,;:]\s/);
         if (clauseEnd !== -1) {
           bestBreak = lookbackLimit + clauseEnd + 1;
@@ -82,8 +103,9 @@ export class TtsEngine {
           }
         }
       }
+    }
 
-      chunks.push(cleanText.substring(currentPos, bestBreak).trim());
+    chunks.push(cleanText.substring(currentPos, bestBreak).trim());
       currentPos = bestBreak;
     }
 
