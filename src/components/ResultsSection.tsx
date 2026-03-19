@@ -18,14 +18,14 @@ export const ResultsSection = ({
     <div className="flex flex-col gap-6 bg-white dark:bg-slate-800/50 p-6 md:p-8 rounded-xl border border-primary/10 h-full max-h-[600px]">
       <div className="flex items-center gap-2 mb-2">
         <PlayCircle className="text-primary w-5 h-5" />
-        <h3 className="text-lg font-bold">Your Audio Queue</h3>
+        <h3 className="text-lg font-bold">Vaše fronta nahrávek</h3>
       </div>
       
       <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar">
         {files.length === 0 ? (
           <div className="flex-1 flex flex-col justify-center items-center gap-4 text-center opacity-40 py-12">
             <Music className="w-12 h-12" />
-            <p className="text-sm font-medium">No files in queue.<br/>Upload PDFs to start.</p>
+            <p className="text-sm font-medium">Ve frontě nejsou žádné soubory.<br/>Nahrajte PDF a začněte.</p>
           </div>
         ) : (
           files.map((file) => (
@@ -54,11 +54,11 @@ export const ResultsSection = ({
                       {file.file.name}
                     </span>
                     <span className="text-[10px] font-bold opacity-50 flex items-center gap-1.5 mt-0.5">
-                      {file.status === 'HOTOVO' && <span className="text-green-500">READY</span>}
-                      {file.status === 'ZPRACOVÁVÁM' && <span className="text-primary animate-pulse">GENERATING {file.progress}%</span>}
-                      {file.status === 'OPTIMALIZUJI' && <span className="text-primary animate-pulse">AI ANALYZING...</span>}
-                      {file.status === 'ČEKÁ' && <span>IN QUEUE</span>}
-                      {file.status === 'CHYBA' && <span className="text-red-500 uppercase tracking-tighter">ERROR</span>}
+                      {file.status === 'HOTOVO' && <span className="text-green-500">HOTOVO</span>}
+                      {file.status === 'ZPRACOVÁVÁM' && <span className="text-primary animate-pulse">GENERUJI {file.progress}%</span>}
+                      {file.status === 'OPTIMALIZUJI' && <span className="text-primary animate-pulse">AI ANALÝZA...</span>}
+                      {file.status === 'ČEKÁ' && <span>VE FRONTĚ</span>}
+                      {file.status === 'CHYBA' && <span className="text-red-500 uppercase tracking-tighter">CHYBA</span>}
                     </span>
                   </div>
                 </div>
@@ -68,7 +68,7 @@ export const ResultsSection = ({
                     <button 
                       onClick={(e) => { e.stopPropagation(); onOpenEdit(file.id); }}
                       className="p-1.5 hover:bg-primary/10 text-primary rounded-lg transition-all"
-                      title="Edit Transcription"
+                      title="Upravit přepis"
                     >
                       <Settings2 className="w-4 h-4" />
                     </button>
@@ -122,11 +122,11 @@ export const ResultsSection = ({
       {files.length > 0 && (
         <div className="pt-4 border-t border-primary/5 flex items-center justify-between">
           <p className="text-[10px] font-bold uppercase opacity-30 tracking-widest leading-none">
-            Click any file to edit
+            Kliknutím na soubor jej upravíte
           </p>
           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-50 dark:bg-slate-900 border border-primary/5">
              <div className="size-1 rounded-full bg-green-500" />
-             <span className="text-[9px] font-medium opacity-60">System Ready</span>
+             <span className="text-[9px] font-medium opacity-60">Systém připraven</span>
           </div>
         </div>
       )}

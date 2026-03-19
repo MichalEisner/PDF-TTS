@@ -17,6 +17,7 @@ import confetti from 'canvas-confetti';
 import { FileText, ShieldCheck } from 'lucide-react';
 import { auth, db } from './firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -28,6 +29,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<{ photoURL?: string } | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   
@@ -51,13 +53,30 @@ function App() {
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
+  }, [selectedVoice]);
 
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (!currentUser) {
+        setUserProfile(null);
+      }
     });
-
     return () => unsubscribe();
-  }, [selectedVoice]);
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (doc) => {
+        if (doc.exists()) {
+          setUserProfile(doc.data() as { photoURL?: string });
+        } else {
+          setUserProfile(null);
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
 
   const updateFileStatus = (id: string, updates: Partial<QueuedFile>) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
@@ -94,16 +113,10 @@ function App() {
         // AI Refinement Step
         console.log(`App: Spouštím AI optimalizaci pro soubor ${fileItem.file.name}...`);
         const optimizedText = await refineTextForTts(text);
-        console.log(`App: AI optimalizace dokončena, přecházím na TTS pro soubor ${fileItem.file.name}.`);
+        console.log(`App: AI optimalizace dokončena, ukládám do profilu a přecházím na TTS.`);
         updateFileStatus(fileItem.id, { text: optimizedText, status: 'ZPRACOVÁVÁM' });
 
-        const blob = await ttsEngine.current!.speakAndRecord(optimizedText, selectedVoice, (p) => {
-          updateFileStatus(fileItem.id, { progress: Math.round(p * 100) });
-        });
-
-        updateFileStatus(fileItem.id, { status: 'HOTOVO', progress: 100, blob });
-
-        // Automatic Save to Firestore if user is logged in
+        // Automatic Save to Firestore if user is logged in (BEFORE TTS)
         if (user) {
           try {
             await addDoc(collection(db, 'transcriptions'), {
@@ -118,6 +131,12 @@ function App() {
             console.error("Error auto-saving to profile:", saveError);
           }
         }
+
+        const blob = await ttsEngine.current!.speakAndRecord(optimizedText, selectedVoice, (p) => {
+          updateFileStatus(fileItem.id, { progress: Math.round(p * 100) });
+        });
+
+        updateFileStatus(fileItem.id, { status: 'HOTOVO', progress: 100, blob });
 
         confetti({
           particleCount: 40,
@@ -144,13 +163,7 @@ function App() {
     updateFileStatus(id, { status: 'ZPRACOVÁVÁM', progress: 0 });
 
     try {
-      const blob = await ttsEngine.current.speakAndRecord(fileItem.text, selectedVoice, (p) => {
-        updateFileStatus(fileItem.id, { progress: Math.round(p * 100) });
-      });
-
-      updateFileStatus(id, { status: 'HOTOVO', progress: 100, blob });
-
-      // Automatic Save to Firestore if user is logged in
+      // Automatic Save to Firestore if user is logged in (BEFORE TTS)
       if (user) {
         try {
           await addDoc(collection(db, 'transcriptions'), {
@@ -160,11 +173,17 @@ function App() {
             text: fileItem.text,
             createdAt: serverTimestamp(),
           });
-          console.log(`App: Regerovaný soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
+          console.log(`App: Regenerovaný soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
         } catch (saveError) {
           console.error("Error auto-saving to profile:", saveError);
         }
       }
+
+      const blob = await ttsEngine.current.speakAndRecord(fileItem.text, selectedVoice, (p) => {
+        updateFileStatus(fileItem.id, { progress: Math.round(p * 100) });
+      });
+
+      updateFileStatus(id, { status: 'HOTOVO', progress: 100, blob });
 
       confetti({
         particleCount: 20,
@@ -233,11 +252,12 @@ function App() {
           
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-4 text-sm font-medium opacity-70 mr-4">
-              <span>Fast. Secure. Quality AI Voices.</span>
+              <span>Rychlé. Bezpečné. Kvalitní AI hlasy.</span>
             </div>
             <AuthButton 
               onOpenAuth={() => setIsAuthModalOpen(true)} 
               onOpenProfile={() => setIsProfileModalOpen(true)}
+              customPhotoURL={userProfile?.photoURL}
             />
           </div>
         </header>
@@ -251,13 +271,13 @@ function App() {
           >
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/5 border border-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest mb-4">
               <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-              Powered by Google Gemini AI
+              Poháněno Google Gemini AI
             </div>
             <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6 bg-gradient-to-r from-slate-900 via-primary to-slate-900 dark:from-white dark:via-primary dark:to-white bg-clip-text text-transparent leading-tight">
-              Turn your documents into <span className="text-primary">audio</span>
+              Proměňte své dokumenty v <span className="text-primary">audio</span>
             </h1>
             <p className="text-base md:text-lg opacity-60 max-w-2xl mx-auto">
-              Transform PDFs into high-quality artificial speech. Cleaned, structured, and read with precision by advanced AI voices.
+              Transformujte PDF soubory na vysoce kvalitní umělou řeč. Vyčištěno, strukturováno a precizně přečteno pokročilými AI hlasy.
             </p>
           </motion.div>
 
@@ -308,6 +328,8 @@ function App() {
                 <SavedTranscriptions 
                   userId={user.uid} 
                   onLoadTranscription={handleLoadSaved} 
+                  ttsEngine={ttsEngine.current}
+                  selectedVoice={selectedVoice}
                 />
               </motion.div>
             )}
@@ -315,7 +337,7 @@ function App() {
 
           <footer className="mt-20 py-10 border-t border-primary/5 w-full text-center">
             <p className="text-xs opacity-40 flex items-center justify-center gap-2">
-              <ShieldCheck className="w-4 h-4" /> Your data is processed securely via Google Cloud. No permanent storage unless saved to profile.
+              <ShieldCheck className="w-4 h-4" /> Vaše data jsou zpracovávána bezpečně přes Google Cloud. Žádné trvalé úložiště, pokud si přepis neuložíte do profilu.
             </p>
           </footer>
         </main>
@@ -341,6 +363,7 @@ function App() {
           isOpen={isProfileModalOpen}
           onClose={() => setIsProfileModalOpen(false)}
           user={user}
+          customPhotoURL={userProfile?.photoURL}
         />
       )}
     </div>

@@ -50,9 +50,9 @@ export const TranscriptionModal = ({
                   {file.file.name}
                 </h3>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-primary/70">
-                  {file.status === 'HOTOVO' ? 'Transcription Ready' : 
-                   file.status === 'ZPRACOVÁVÁM' ? `Processing... ${file.progress}%` : 
-                   file.status === 'CHYBA' ? 'Transcription Error' : 'Analyzing File'}
+                  {file.status === 'HOTOVO' ? 'Přepis připraven' : 
+                   file.status === 'ZPRACOVÁVÁM' ? `Zpracovávám... ${file.progress}%` : 
+                   file.status === 'CHYBA' ? 'Chyba přepisu' : 'Analyzuji soubor'}
                 </span>
               </div>
             </div>
@@ -83,14 +83,14 @@ export const TranscriptionModal = ({
           <div className="p-6">
             <div className="flex items-center justify-between mb-3">
               <label className="text-xs font-bold uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                Processed Transcription
+                Zpracovaný přepis
               </label>
               <button 
                 onClick={() => onRegenerate(file.id)}
                 disabled={isProcessing || !file.text}
                 className="flex items-center gap-2 text-xs font-bold text-primary hover:text-primary/80 disabled:opacity-30 transition-all px-3 py-1.5 rounded-lg hover:bg-primary/5"
               >
-                <RotateCcw className="w-3.5 h-3.5" /> Regenerate Audio
+                <RotateCcw className="w-3.5 h-3.5" /> Znovu vygenerovat audio
               </button>
             </div>
 
@@ -99,7 +99,7 @@ export const TranscriptionModal = ({
               onChange={(e) => onTextChange(file.id, e.target.value)}
               disabled={isProcessing}
               className="w-full h-96 p-5 text-sm bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none leading-relaxed text-slate-700 dark:text-slate-200 font-medium"
-              placeholder="Your transcription will appear here after AI analysis..."
+              placeholder="Váš přepis se zde objeví po AI analýze..."
             />
           </div>
 
@@ -110,7 +110,7 @@ export const TranscriptionModal = ({
               disabled={isProcessing}
               className="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all disabled:opacity-30 text-sm font-bold"
             >
-              <Trash2 className="w-4 h-4" /> Remove File
+              <Trash2 className="w-4 h-4" /> Odstranit soubor
             </button>
 
             <div className="flex items-center gap-3">
@@ -118,14 +118,14 @@ export const TranscriptionModal = ({
                 onClick={onClose}
                 className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all"
               >
-                Close
+                Zavřít
               </button>
               {file.status === 'HOTOVO' && (
                 <button 
                   onClick={() => onDownload(file.id)}
                   className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white hover:bg-primary/90 rounded-xl transition-all text-sm font-bold shadow-lg shadow-primary/20"
                 >
-                  <Download className="w-4 h-4" /> Download MP3
+                  <Download className="w-4 h-4" /> Stáhnout MP3
                 </button>
               )}
             </div>

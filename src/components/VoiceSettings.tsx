@@ -35,12 +35,12 @@ export const VoiceSettings = ({
     <div className="flex flex-col gap-6 bg-white dark:bg-slate-800/50 p-8 rounded-xl border border-primary/10 h-full">
       <div className="flex items-center gap-2 mb-2">
         <Settings className="text-primary w-5 h-5" />
-        <h3 className="text-lg font-bold">Voice Settings</h3>
+        <h3 className="text-lg font-bold">Nastavení hlasu</h3>
       </div>
       
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold opacity-70">Language & Voice</label>
+          <label className="text-sm font-semibold opacity-70">Jazyk a hlas</label>
           <select 
             value={selectedVoice}
             onChange={(e) => onVoiceChange(e.target.value)}
@@ -60,7 +60,7 @@ export const VoiceSettings = ({
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold opacity-70">Speaking Speed ({speed.toFixed(1)}x)</label>
+          <label className="text-sm font-semibold opacity-70">Rychlost řeči ({speed.toFixed(1)}x)</label>
           <input 
             className="w-full h-2 bg-primary/20 rounded-lg appearance-none cursor-pointer accent-primary" 
             max="2.0" 
@@ -72,8 +72,8 @@ export const VoiceSettings = ({
             disabled={disabled}
           />
           <div className="flex justify-between text-[10px] opacity-50 px-1">
-            <span>Slower</span>
-            <span>Faster</span>
+            <span>Pomaleji</span>
+            <span>Rychleji</span>
           </div>
         </div>
       </div>
@@ -88,7 +88,7 @@ export const VoiceSettings = ({
         ) : (
           <Sparkles className="w-5 h-5" />
         )}
-        {isProcessing ? 'Processing Queue...' : 'Convert to Speech'}
+        {isProcessing ? 'Zpracovávám frontu...' : 'Převést na řeč'}
       </button>
     </div>
   );

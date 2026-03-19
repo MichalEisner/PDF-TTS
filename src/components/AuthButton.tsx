@@ -8,9 +8,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface AuthButtonProps {
   onOpenAuth: () => void;
   onOpenProfile: () => void;
+  customPhotoURL?: string;
 }
 
-export const AuthButton = ({ onOpenAuth, onOpenProfile }: AuthButtonProps) => {
+export const AuthButton = ({ onOpenAuth, onOpenProfile, customPhotoURL }: AuthButtonProps) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -49,8 +50,8 @@ export const AuthButton = ({ onOpenAuth, onOpenProfile }: AuthButtonProps) => {
         className="flex items-center gap-2 p-1.5 pr-3 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-primary/30 transition-all active:scale-[0.98]"
       >
         <div className="size-8 rounded-full bg-primary/20 flex items-center justify-center text-primary overflow-hidden border border-primary/10">
-          {user.photoURL ? (
-            <img src={user.photoURL} alt={user.displayName || 'User'} className="size-full object-cover" />
+          {customPhotoURL || user.photoURL ? (
+            <img src={customPhotoURL || user.photoURL || ''} alt={user.displayName || 'User'} className="size-full object-cover" />
           ) : (
             <User className="size-5" />
           )}

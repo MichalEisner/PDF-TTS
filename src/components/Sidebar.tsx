@@ -2,7 +2,7 @@ import { LayoutDashboard, History, Folder, Settings, PieChart } from 'lucide-rea
 
 export const Sidebar = () => {
   const menuItems = [
-    { icon: <LayoutDashboard size={18} />, label: 'Dashboard', active: true },
+    { icon: <LayoutDashboard size={18} />, label: 'Přehled', active: true },
     { icon: <History size={18} />, label: 'Historie', active: false },
     { icon: <Folder size={18} />, label: 'Moje soubory', active: false },
     { icon: <Settings size={18} />, label: 'Nastavení', active: false },

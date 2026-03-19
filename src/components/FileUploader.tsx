@@ -52,11 +52,11 @@ export const FileUploader = ({ onFilesSelect }: FileUploaderProps) => {
           <UploadCloud className="w-10 h-10" />
         </div>
         <div className="flex flex-col items-center gap-2">
-          <p className="text-xl font-bold tracking-tight text-center">Drag and drop PDF here</p>
-          <p className="text-sm opacity-70 text-center">Supports PDF files up to 50MB</p>
+          <p className="text-xl font-bold tracking-tight text-center">Sem přetáhněte PDF soubor</p>
+          <p className="text-sm opacity-70 text-center">Podporuje PDF soubory do 50 MB</p>
         </div>
         <button className="flex min-w-[160px] cursor-pointer items-center justify-center rounded-lg h-12 px-6 bg-primary text-white text-sm font-bold tracking-wide shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
-          Select PDF
+          Vybrat PDF
         </button>
       </motion.div>
     </div>
