@@ -38,8 +38,11 @@ export class TtsEngine {
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      // Route through local CORS proxy (configured in vite.config.ts)
-      const url = `/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
+      // Route through local CORS proxy in dev (configured in vite.config.ts), or public CORS proxy in production
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
+      const url = import.meta.env.DEV 
+        ? `/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`
+        : `https://corsproxy.io/?${encodeURIComponent(ttsUrl)}`;
       
       try {
         const response = await fetch(url);
