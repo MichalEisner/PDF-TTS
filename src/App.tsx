@@ -216,10 +216,7 @@ function App() {
 
   const handleDownloadMp3 = (id: string) => {
     const fileItem = files.find(f => f.id === id);
-    if (!fileItem?.blob || fileItem.blob.size === 0) {
-      alert("Stahování MP3 není v této verzi (Web Speech API) k dispozici. Hlas se generuje přímo ve vašem prohlížeči.");
-      return;
-    }
+    if (!fileItem?.blob) return;
     const url = URL.createObjectURL(fileItem.blob);
     const a = document.createElement('a');
     a.href = url;
