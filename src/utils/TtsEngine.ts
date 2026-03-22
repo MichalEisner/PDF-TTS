@@ -2,120 +2,71 @@
 import * as lamejs from 'lamejs';
 
 export class TtsEngine {
+  private currentUtterance: SpeechSynthesisUtterance | null = null;
+
   constructor() {
-    // No longer need complex audio context setup for native recording
+    // Initialization of voices is handled by the browser
   }
 
   getVoices(): SpeechSynthesisVoice[] {
-    // We return a simplified set of "Standard AI Voices" to match 
-    // the Google Translate API we're using, avoiding confusion 
-    // with local system voice names like "Jakub".
-    return [
-      { 
-        name: 'Standard AI Voice (Czech)', 
-        lang: 'cs-CZ', 
-        voiceURI: 'google-cs',
-        default: true,
-        localService: false
-      } as SpeechSynthesisVoice,
-      { 
-        name: 'Standard AI Voice (English)', 
-        lang: 'en-US', 
-        voiceURI: 'google-en',
-        default: false,
-        localService: false
-      } as SpeechSynthesisVoice
-    ];
+    // Return actual system voices
+    const voices = window.speechSynthesis.getVoices();
+    // Filter for Czech and English by default
+    return voices.filter(v => v.lang.startsWith('cs') || v.lang.startsWith('en'));
   }
 
   async speakAndRecord(text: string, voiceURI: string, onProgress: (progress: number) => void): Promise<Blob> {
-    // Identify target language from voiceURI or default to CZ
-    const lang = voiceURI.includes('cs') || voiceURI.includes('Czech') ? 'cs' : 'en';
-    
-    // Split text into chunks to respect the 200 character limit of the Google Translate TTS API
-    const chunks = this.splitText(text, 200);
-    const audioBlobs: Blob[] = [];
+    return new Promise((resolve, reject) => {
+      // Cancel any ongoing speech
+      this.stop();
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      // Route through local CORS proxy in dev (configured in vite.config.ts), or public CORS proxy in production
-      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`;
-      const url = import.meta.env.DEV 
-        ? `/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=tw-ob`
-        : `https://corsproxy.io/?${encodeURIComponent(ttsUrl)}`;
-      
-      try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`TTS API failed for chunk ${i}`);
-        const blob = await response.blob();
-        audioBlobs.push(blob);
-        
-        // Update progress
-        onProgress((i + 1) / chunks.length);
-      } catch (error) {
-        console.error("TTS Engine Error:", error);
-      }
-    }
+      const voices = window.speechSynthesis.getVoices();
+      const selectedVoice = voices.find(v => v.voiceURI === voiceURI) || 
+                             voices.find(v => v.lang.startsWith('cs')) || 
+                             voices[0];
 
-    if (audioBlobs.length === 0) throw new Error("Nepodařilo se vygenerovat žádné audio.");
-
-    // Merge audio blobs into a single MP3 Blob
-    return new Blob(audioBlobs, { type: 'audio/mpeg' });
-  }
-
-  private splitText(text: string, maxLength: number): string[] {
-    const chunks: string[] = [];
-    const cleanText = text.replace(/[*#]/g, '').replace(/[ \t]+/g, ' ').trim();
-    console.log("TtsEngine: Dělím text na bloky. Celková délka:", cleanText.length);
-    
-    let currentPos = 0;
-    while (currentPos < cleanText.length) {
-      let endPos = currentPos + maxLength;
-      
-      if (endPos >= cleanText.length) {
-        chunks.push(cleanText.substring(currentPos));
-        break;
+      if (!selectedVoice) {
+        reject(new Error("Nenalezen žádný vhodný hlas."));
+        return;
       }
 
-      // Try to find the best break point within the 200 char window
-      const lookbackLimit = Math.max(currentPos, endPos - 50); // Look back up to 50 chars for punctuation
-      let bestBreak = -1;
+      // Clean text for synthesis (remove markdown artifacts)
+      const cleanText = text.replace(/[*#]/g, '').replace(/[ \t]+/g, ' ').trim();
+      
+      this.currentUtterance = new SpeechSynthesisUtterance(cleanText);
+      this.currentUtterance.voice = selectedVoice;
+      this.currentUtterance.lang = selectedVoice.lang;
+      this.currentUtterance.rate = 1.0; // Can be linked to state later
 
-      // Priority 0: Newlines (best for chapters/headings)
-      const newlineIdx = cleanText.substring(lookbackLimit, endPos).indexOf('\n');
-      if (newlineIdx !== -1) {
-        bestBreak = lookbackLimit + newlineIdx + 1;
-      } else {
-        // Priority 1: Sentence endings (. ! ?)
-        const sentenceEnd = cleanText.substring(lookbackLimit, endPos).search(/[.!?]\s/);
-        if (sentenceEnd !== -1) {
-          bestBreak = lookbackLimit + sentenceEnd + 1;
-        } else {
-          // Priority 2: Clauses (, ; :)
-        const clauseEnd = cleanText.substring(lookbackLimit, endPos).search(/[,;:]\s/);
-        if (clauseEnd !== -1) {
-          bestBreak = lookbackLimit + clauseEnd + 1;
-        } else {
-          // Priority 3: Spaces
-          const lastSpace = cleanText.lastIndexOf(' ', endPos);
-          if (lastSpace > currentPos) {
-            bestBreak = lastSpace;
-          } else {
-            // Priority 4: Hard cut
-            bestBreak = endPos;
-          }
+      this.currentUtterance.onboundary = (event) => {
+        if (event.name === 'word') {
+          const progress = event.charIndex / cleanText.length;
+          onProgress(progress);
         }
-      }
-    }
+      };
 
-    chunks.push(cleanText.substring(currentPos, bestBreak).trim());
-      currentPos = bestBreak;
-    }
+      this.currentUtterance.onend = () => {
+        onProgress(1);
+        this.currentUtterance = null;
+        // Return a dummy small MP3 blob to satisfy the type, 
+        // informing the UI that real-time playback happened.
+        resolve(new Blob([], { type: 'audio/mpeg' }));
+      };
 
-    return chunks.filter(c => c.length > 0);
+      this.currentUtterance.onerror = (error) => {
+        console.error("Speech Synthesis Error:", error);
+        this.currentUtterance = null;
+        reject(error);
+      };
+
+      window.speechSynthesis.speak(this.currentUtterance);
+    });
   }
 
   stop() {
-    // No-op for API based TTS in this implementation
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+    this.currentUtterance = null;
   }
 }

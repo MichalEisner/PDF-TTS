@@ -7,7 +7,7 @@ export async function refineTextForTts(text: string): Promise<string> {
   console.log("AiProcessor: Spouštím optimalizaci textu...", { length: text.length });
 
 
-  // Rozdělení textu na větší bloky (150 000 znaků), aby se optimalizoval počet volání
+  // Rozdělení textu na větší bloky (100 000 znaků), aby se optimalizoval počet volání
   const CHUNK_SIZE = 100000;
   const chunks: string[] = [];
   for (let i = 0; i < text.length; i += CHUNK_SIZE) {

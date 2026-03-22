@@ -43,8 +43,9 @@ function App() {
       const availableVoices = ttsEngine.current?.getVoices() || [];
       setVoices(availableVoices);
       if (availableVoices.length > 0 && !selectedVoice) {
-        const defaultVoice = availableVoices.find(v => v.voiceURI === 'google-cs') || 
-                             availableVoices.find(v => v.voiceURI === 'google-en') || 
+        // Try to find a good Czech voice first, then English
+        const defaultVoice = availableVoices.find(v => v.lang.startsWith('cs')) || 
+                             availableVoices.find(v => v.lang.startsWith('en')) || 
                              availableVoices[0];
         setSelectedVoice(defaultVoice.voiceURI);
       }
@@ -215,7 +216,10 @@ function App() {
 
   const handleDownloadMp3 = (id: string) => {
     const fileItem = files.find(f => f.id === id);
-    if (!fileItem?.blob) return;
+    if (!fileItem?.blob || fileItem.blob.size === 0) {
+      alert("Stahování MP3 není v této verzi (Web Speech API) k dispozici. Hlas se generuje přímo ve vašem prohlížeči.");
+      return;
+    }
     const url = URL.createObjectURL(fileItem.blob);
     const a = document.createElement('a');
     a.href = url;
