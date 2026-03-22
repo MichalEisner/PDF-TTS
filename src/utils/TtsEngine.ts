@@ -17,7 +17,8 @@ export class TtsEngine {
     const lang = voiceURI.includes('cs') || voiceURI.includes('Czech') ? 'cs' : 'en';
 
     // 1. Sequential Background MP3 Generation ONLY (Live playback removed)
-    const chunks = this.splitText(cleanText, 180);
+    // Increased to 200 (Google limit) for fewer breaks
+    const chunks = this.splitText(cleanText, 200);
     const audioBlobs: Blob[] = [];
 
     console.log(`TtsEngine: Startuju sekvenční generování ${chunks.length} bloků...`);
@@ -65,17 +66,41 @@ export class TtsEngine {
   private splitText(text: string, maxLength: number): string[] {
     const chunks: string[] = [];
     let currentPos = 0;
+    
     while (currentPos < text.length) {
-      let endPos = currentPos + maxLength;
-      if (endPos >= text.length) {
-        chunks.push(text.substring(currentPos));
+      if (currentPos + maxLength >= text.length) {
+        chunks.push(text.substring(currentPos).trim());
         break;
       }
-      const lastSpace = text.lastIndexOf(' ', endPos);
-      const bestBreak = lastSpace > currentPos ? lastSpace : endPos;
+
+      let endPos = currentPos + maxLength;
+      const lookbackLimit = Math.max(currentPos, endPos - 70); // Search in last 70 chars
+      const segment = text.substring(lookbackLimit, endPos);
+      
+      let bestBreak = -1;
+
+      // 1. Try to find end of sentence (. ! ? followed by space)
+      const sentenceEnd = segment.search(/[.!?]\s/);
+      if (sentenceEnd !== -1) {
+        bestBreak = lookbackLimit + sentenceEnd + 1;
+      } 
+      // 2. Try to find comma or other punctuation
+      else {
+        const punctuation = segment.search(/[,:;]\s/);
+        if (punctuation !== -1) {
+          bestBreak = lookbackLimit + punctuation + 1;
+        }
+        // 3. Fallback to last space
+        else {
+          const lastSpace = text.lastIndexOf(' ', endPos);
+          bestBreak = lastSpace > currentPos ? lastSpace : endPos;
+        }
+      }
+
       chunks.push(text.substring(currentPos, bestBreak).trim());
       currentPos = bestBreak;
     }
+    
     return chunks.filter(c => c.length > 0);
   }
 
