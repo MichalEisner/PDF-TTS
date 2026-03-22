@@ -2,33 +2,22 @@
 import * as lamejs from 'lamejs';
 
 export class TtsEngine {
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
-
   constructor() {}
 
   getVoices(): SpeechSynthesisVoice[] {
-    // Return both system voices (for playback) and AI labels (for the UI)
-    const systemVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('cs') || v.lang.startsWith('en'));
-    
-    // If no system voices yet (chrome loading bug), return placeholders
-    if (systemVoices.length === 0) {
-      return [
-        { name: 'Standard AI Voice (Czech)', lang: 'cs-CZ', voiceURI: 'google-cs', default: true } as SpeechSynthesisVoice,
-        { name: 'Standard AI Voice (English)', lang: 'en-US', voiceURI: 'google-en', default: false } as SpeechSynthesisVoice
-      ];
-    }
-    return systemVoices;
+    // Return AI labels for the UI (used for choosing lang)
+    return [
+      { name: 'Standard AI Voice (Czech)', lang: 'cs-CZ', voiceURI: 'google-cs', default: true } as SpeechSynthesisVoice,
+      { name: 'Standard AI Voice (English)', lang: 'en-US', voiceURI: 'google-en', default: false } as SpeechSynthesisVoice
+    ];
   }
 
   async speakAndRecord(text: string, voiceURI: string, onProgress: (progress: number) => void): Promise<Blob> {
     const cleanText = text.replace(/[*#]/g, '').replace(/[ \t]+/g, ' ').trim();
     const lang = voiceURI.includes('cs') || voiceURI.includes('Czech') ? 'cs' : 'en';
 
-    // 1. Instant Playback via Web Speech API
-    this.playSpeech(cleanText, voiceURI);
-
-    // 2. Sequential Background MP3 Generation
-    const chunks = this.splitText(cleanText, 180); // Slightly smaller chunks for safety
+    // 1. Sequential Background MP3 Generation ONLY (Live playback removed)
+    const chunks = this.splitText(cleanText, 180);
     const audioBlobs: Blob[] = [];
 
     console.log(`TtsEngine: Startuju sekvenční generování ${chunks.length} bloků...`);
@@ -37,8 +26,6 @@ export class TtsEngine {
         const chunk = chunks[i];
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=gtx`;
         
-        // Try multiple proxies if one fails
-        // Expand robust proxy list
         const proxies = [
             (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
             (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -50,50 +37,29 @@ export class TtsEngine {
         for (const proxyFn of proxies) {
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
                 
                 const response = await fetch(proxyFn(ttsUrl), { signal: controller.signal });
                 clearTimeout(timeoutId);
                 
                 if (!response.ok) throw new Error(`Status ${response.status}`);
                 blob = await response.blob();
-                break; // SUCCESS
+                break;
             } catch (e) {
                 console.warn(`Proxy selhala, zkouším další...`, e);
             }
         }
 
-        if (blob) {
-            audioBlobs.push(blob);
-        }
-        
-        // Update progress based on chunks fetched
+        if (blob) audioBlobs.push(blob);
         onProgress((i + 1) / chunks.length);
-        
-        // Add a small delay between requests to be nice to proxies
-        if (i < chunks.length - 1) {
-            await new Promise(r => setTimeout(r, 300));
-        }
+        if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 400));
     }
 
     if (audioBlobs.length === 0) {
-        throw new Error("Nepodařilo se vygenerovat MP3 soubor (proxy servery jsou přetížené).");
+        throw new Error("Nepodařilo se vygenerovat MP3 (všechny proxy selhaly).");
     }
 
     return new Blob(audioBlobs, { type: 'audio/mpeg' });
-  }
-
-  private playSpeech(text: string, voiceURI: string) {
-    this.stop();
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find(v => v.voiceURI === voiceURI) || 
-                  voices.find(v => v.lang.startsWith('cs')) || 
-                  voices[0];
-
-    this.currentUtterance = new SpeechSynthesisUtterance(text);
-    if (voice) this.currentUtterance.voice = voice;
-    this.currentUtterance.lang = voice?.lang || 'cs-CZ';
-    window.speechSynthesis.speak(this.currentUtterance);
   }
 
   private splitText(text: string, maxLength: number): string[] {
@@ -114,7 +80,6 @@ export class TtsEngine {
   }
 
   stop() {
-    window.speechSynthesis.cancel();
-    this.currentUtterance = null;
+    // No live speech to stop anymore
   }
 }
