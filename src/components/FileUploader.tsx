@@ -17,14 +17,22 @@ export const FileUploader = ({ onFilesSelect }: FileUploaderProps) => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(file => 
+      file.type === 'application/pdf' || 
+      file.type === 'application/epub+zip' ||
+      file.name.toLowerCase().endsWith('.epub')
+    );
     if (droppedFiles.length > 0) {
       onFilesSelect(droppedFiles);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []).filter(file => file.type === 'application/pdf');
+    const selectedFiles = Array.from(e.target.files || []).filter(file => 
+      file.type === 'application/pdf' || 
+      file.type === 'application/epub+zip' ||
+      file.name.toLowerCase().endsWith('.epub')
+    );
     if (selectedFiles.length > 0) {
       onFilesSelect(selectedFiles);
     }
@@ -44,7 +52,7 @@ export const FileUploader = ({ onFilesSelect }: FileUploaderProps) => {
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          accept=".pdf"
+          accept=".pdf,.epub"
           multiple
           className="hidden"
         />
@@ -52,11 +60,11 @@ export const FileUploader = ({ onFilesSelect }: FileUploaderProps) => {
           <UploadCloud className="w-10 h-10" />
         </div>
         <div className="flex flex-col items-center gap-2">
-          <p className="text-xl font-bold tracking-tight text-center">Sem přetáhněte PDF soubor</p>
-          <p className="text-sm opacity-70 text-center">Podporuje PDF soubory do 50 MB</p>
+          <p className="text-xl font-bold tracking-tight text-center">Sem přetáhněte PDF nebo EPUB soubor</p>
+          <p className="text-sm opacity-70 text-center">Podporuje PDF a EPUB soubory do 50 MB</p>
         </div>
         <button className="flex min-w-[160px] cursor-pointer items-center justify-center rounded-lg h-12 px-6 bg-primary text-white text-sm font-bold tracking-wide shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
-          Vybrat PDF
+          Vybrat soubory
         </button>
       </motion.div>
     </div>

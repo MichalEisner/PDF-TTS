@@ -3,21 +3,12 @@ import { ai } from "../firebase/firebase";
 
 export async function refineTextForTts(text: string): Promise<string> {
   if (!text || text.length < 50) return text;
-  
-  console.log("AiProcessor: Spouštím optimalizaci textu...", { length: text.length });
-  
-  const model = getGenerativeModel(ai, { 
-    model: "gemini-3-flash-preview", // Uživatel si přeje ponechat tento název
-    safetySettings: [
-      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    ],
-  });
 
-  // Rozdělení textu na bloky (cca 8000 znaků), aby se předešlo limitu výstupních tokenů
-  const CHUNK_SIZE = 8000;
+  console.log("AiProcessor: Spouštím optimalizaci textu...", { length: text.length });
+
+
+  // Rozdělení textu na větší bloky (150 000 znaků), aby se optimalizoval počet volání
+  const CHUNK_SIZE = 100000;
   const chunks: string[] = [];
   for (let i = 0; i < text.length; i += CHUNK_SIZE) {
     chunks.push(text.substring(i, i + CHUNK_SIZE));
@@ -29,6 +20,22 @@ export async function refineTextForTts(text: string): Promise<string> {
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     console.log(`AiProcessor: Zpracovávám část ${i + 1}/${chunks.length}...`);
+
+    // Model vytváříme znovu pro každou část, aby se předešlo DNS/CORS chybám u dlouhých souborů
+    const model = getGenerativeModel(ai, {
+      model: "gemini-3-flash-preview",
+      generationConfig: {
+        maxOutputTokens: 65530,
+      },
+      safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      ],
+    }, {
+      timeout: 300000,
+    });
 
     const prompt = `
       Jsi asistent pro optimalizaci textu pro převod na řeč (TTS). 
@@ -43,7 +50,8 @@ export async function refineTextForTts(text: string): Promise<string> {
       6. Fonetický přepis: Cizí slova/jména (English) přepiš foneticky česky (př. George -> Džordž, ChatGPT -> čet džípítý).
       7. Case Normalizace: SLOVA VELKÝMI PÍSMENY změň na Standardní (př. HORATIO -> Horatio).
       8. Odstranění stránkování: Identifikuj a vymaž čísla stránek z textu.
-      9. Vrať POUZE opravený text této části bez komentářů.
+      9. DŮLEŽITÉ: Nemaž žádné věty ani části textu, které nespadají pod pravidlo 1 a 8. Cílem je zachovat kompletní významový obsah.
+      10. Vrať POUZE opravený text této části bez komentářů.
   
       Text k optimalizaci (část ${i + 1}/${chunks.length}):
       ${chunk}
@@ -53,14 +61,15 @@ export async function refineTextForTts(text: string): Promise<string> {
       const result = await model.generateContent(prompt);
       const response = await result.response;
       let refinedChunk = response.text().trim();
-      
+
       // Sanitizace markdownu
       refinedChunk = refinedChunk.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '');
       processedChunks.push(refinedChunk);
-      
-      // Malá pauza mezi bloky (prevence limitu požadavků)
+
+      // Výrazně delší pauza mezi bloky pro stabilitu na Spark tarifu (5 sekund)
       if (chunks.length > 1 && i < chunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log(`AiProcessor: Čekám 5 sekund před částí ${i + 2}/${chunks.length}...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     } catch (error: any) {
       console.error(`AiProcessor: Chyba v části ${i + 1}:`, error);

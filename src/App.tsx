@@ -9,6 +9,7 @@ import { AuthModal } from './components/AuthModal';
 import { AuthButton } from './components/AuthButton';
 import { SavedTranscriptions } from './components/SavedTranscriptions';
 import { extractTextFromPdf } from './utils/PdfProcessor';
+import { extractTextFromEpub } from './utils/EpubProcessor';
 import { TtsEngine } from './utils/TtsEngine';
 import { refineTextForTts } from './utils/AiProcessor';
 import type { QueuedFile } from './types';
@@ -105,8 +106,14 @@ function App() {
       try {
         let text = fileItem.text;
         if (!text) {
-          console.log(`App: Extrahuji text z PDF pro soubor ${fileItem.file.name}...`);
-          text = await extractTextFromPdf(fileItem.file);
+          const isEpub = fileItem.file.name.toLowerCase().endsWith('.epub') || fileItem.file.type === 'application/epub+zip';
+          if (isEpub) {
+            console.log(`App: Extrahuji text z EPUB pro soubor ${fileItem.file.name}...`);
+            text = await extractTextFromEpub(fileItem.file);
+          } else {
+            console.log(`App: Extrahuji text z PDF pro soubor ${fileItem.file.name}...`);
+            text = await extractTextFromPdf(fileItem.file);
+          }
           updateFileStatus(fileItem.id, { text });
         }
 
@@ -212,7 +219,8 @@ function App() {
     const url = URL.createObjectURL(fileItem.blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${fileItem.file.name.replace('.pdf', '')}.mp3`;
+    const downloadName = fileItem.file.name.replace(/\.(pdf|epub)$/i, '') + '.mp3';
+    a.download = downloadName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
