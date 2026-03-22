@@ -16,50 +16,67 @@ export class TtsEngine {
     const cleanText = text.replace(/[*#]/g, '').replace(/[ \t]+/g, ' ').trim();
     const lang = voiceURI.includes('cs') || voiceURI.includes('Czech') ? 'cs' : 'en';
 
-    // 1. Sequential Background MP3 Generation ONLY (Live playback removed)
-    // Increased to 200 (Google limit) for fewer breaks
     const chunks = this.splitText(cleanText, 200);
     const audioBlobs: Blob[] = [];
 
-    console.log(`TtsEngine: Startuju sekvenční generování ${chunks.length} bloků...`);
+    console.log(`TtsEngine: Startuju robustní generování pro ${chunks.length} bloků...`);
 
     for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=gtx`;
+        // More robust URL structure
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&total=1&idx=0&textlen=${chunk.length}&client=tw-ob&prev=input&ttsspeed=1`;
         
         const proxies = [
             (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
             (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
             (url: string) => `https://corsproxy.org/?${encodeURIComponent(url)}`
         ];
 
         let blob: Blob | null = null;
+        let success = false;
+
         for (const proxyFn of proxies) {
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for stability
                 
-                const response = await fetch(proxyFn(ttsUrl), { signal: controller.signal });
+                const finalUrl = proxyFn(ttsUrl);
+                console.log(`TtsEngine: Zkouším proxy ${i+1}/${chunks.length}...`);
+                
+                const response = await fetch(finalUrl, { signal: controller.signal });
                 clearTimeout(timeoutId);
                 
-                if (!response.ok) throw new Error(`Status ${response.status}`);
-                blob = await response.blob();
-                break;
+                if (response.ok) {
+                    blob = await response.blob();
+                    if (blob.size > 100) { // Ensure we got a real audio file
+                        success = true;
+                        break;
+                    }
+                }
             } catch (e) {
-                console.warn(`Proxy selhala, zkouším další...`, e);
+                console.warn(`Proxy selhala u bloku ${i}, zkouším další variantu...`, e);
             }
         }
 
-        if (blob) audioBlobs.push(blob);
+        if (success && blob) {
+            audioBlobs.push(blob);
+        } else {
+            console.error(`Kritické selhání bloku ${i} - všechny cesty selhaly.`);
+        }
+
         onProgress((i + 1) / chunks.length);
-        if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 400));
+        
+        // Wait 1 second between chunks to avoid being flagged as bot
+        if (i < chunks.length - 1) {
+            await new Promise(r => setTimeout(r, 1000));
+        }
     }
 
     if (audioBlobs.length === 0) {
-        throw new Error("Nepodařilo se vygenerovat MP3 (všechny proxy selhaly).");
+        throw new Error("Nepodařilo se vygenerovat MP3. Servery jsou dočasně přetížené.");
     }
 
+    console.log("TtsEngine: Generování dokončeno, spojuji kousky.");
     return new Blob(audioBlobs, { type: 'audio/mpeg' });
   }
 
