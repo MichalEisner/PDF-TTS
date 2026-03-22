@@ -41,13 +41,22 @@ function App() {
     
     const loadVoices = () => {
       const availableVoices = ttsEngine.current?.getVoices() || [];
+      if (availableVoices.length === 0) return;
+      
       setVoices(availableVoices);
-      if (availableVoices.length > 0 && !selectedVoice) {
-        // Try to find a good Czech voice first, then English
-        const defaultVoice = availableVoices.find(v => v.lang.startsWith('cs')) || 
-                             availableVoices.find(v => v.lang.startsWith('en')) || 
-                             availableVoices[0];
-        setSelectedVoice(defaultVoice.voiceURI);
+
+      // If we only had placeholders or no voice yet, pick a better one
+      const isPlaceholder = selectedVoice === 'google-cs' || selectedVoice === 'google-en' || !selectedVoice;
+      
+      if (isPlaceholder) {
+        // Prefer real system voices over placeholders
+        const systemVoice = availableVoices.find(v => v.lang.startsWith('cs') && v.localService) || 
+                            availableVoices.find(v => v.lang.startsWith('cs')) ||
+                            availableVoices.find(v => v.lang.startsWith('en')) || 
+                            availableVoices[0];
+        if (systemVoice) {
+          setSelectedVoice(systemVoice.voiceURI);
+        }
       }
     };
 
