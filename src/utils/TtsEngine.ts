@@ -38,18 +38,26 @@ export class TtsEngine {
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&client=gtx`;
         
         // Try multiple proxies if one fails
+        // Expand robust proxy list
         const proxies = [
             (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+            (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+            (url: string) => `https://corsproxy.org/?${encodeURIComponent(url)}`
         ];
 
         let blob: Blob | null = null;
         for (const proxyFn of proxies) {
             try {
-                const response = await fetch(proxyFn(ttsUrl));
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+                
+                const response = await fetch(proxyFn(ttsUrl), { signal: controller.signal });
+                clearTimeout(timeoutId);
+                
                 if (!response.ok) throw new Error(`Status ${response.status}`);
                 blob = await response.blob();
-                break; // Success!
+                break; // SUCCESS
             } catch (e) {
                 console.warn(`Proxy selhala, zkouším další...`, e);
             }
