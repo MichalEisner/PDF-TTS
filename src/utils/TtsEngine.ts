@@ -19,64 +19,76 @@ export class TtsEngine {
     const chunks = this.splitText(cleanText, 200);
     const audioBlobs: Blob[] = [];
 
-    console.log(`TtsEngine: Startuju robustní generování pro ${chunks.length} bloků...`);
+    // Personal Google Apps Script Proxy (FAST & RELIABLE)
+    const gasProxyUrl = 'https://script.google.com/macros/s/AKfycbzZ5bvOCg75Sqz-4EkLP3e1KHFtlRyQt2z8tZYfKRp0R08caQuFaOvfQ6GfhdMeTP2pUA/exec';
+
+    console.log(`TtsEngine: Startuju BLESKOVÉ generování pro ${chunks.length} bloků...`);
 
     for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        // More robust URL structure
         const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${lang}&total=1&idx=0&textlen=${chunk.length}&client=tw-ob&prev=input&ttsspeed=1`;
         
-        const proxies = [
-            (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            (url: string) => `https://corsproxy.org/?${encodeURIComponent(url)}`
-        ];
-
         let blob: Blob | null = null;
         let success = false;
 
-        for (const proxyFn of proxies) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for stability
-                
-                const finalUrl = proxyFn(ttsUrl);
-                console.log(`TtsEngine: Zkouším proxy ${i+1}/${chunks.length}...`);
-                
-                const response = await fetch(finalUrl, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                
-                if (response.ok) {
-                    blob = await response.blob();
-                    if (blob.size > 100) { // Ensure we got a real audio file
-                        success = true;
-                        break;
+        // Try Personal GAS Proxy first (returns base64)
+        try {
+            console.log(`TtsEngine: Zkouším GAS proxy pro blok ${i+1}/${chunks.length}...`);
+            const response = await fetch(`${gasProxyUrl}?url=${encodeURIComponent(ttsUrl)}`);
+            if (response.ok) {
+                const base64Content = await response.text();
+                if (!base64Content.startsWith('Error')) {
+                    const binaryString = window.atob(base64Content);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let j = 0; j < binaryString.length; j++) {
+                        bytes[j] = binaryString.charCodeAt(j);
                     }
+                    blob = new Blob([bytes], { type: 'audio/mpeg' });
+                    success = true;
                 }
-            } catch (e) {
-                console.warn(`Proxy selhala u bloku ${i}, zkouším další variantu...`, e);
+            }
+        } catch (e) {
+            console.warn(`GAS proxy selhala, zkouším veřejné zálohy...`, e);
+        }
+
+        // Fallback to public proxies if GAS fails
+        if (!success) {
+            const fallbackProxies = [
+                (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                (url: string) => `https://corsproxy.org/?${encodeURIComponent(url)}`
+            ];
+
+            for (const proxyFn of fallbackProxies) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    const response = await fetch(proxyFn(ttsUrl), { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    if (response.ok) {
+                        blob = await response.blob();
+                        if (blob.size > 100) { success = true; break; }
+                    }
+                } catch (e) { console.warn(`Záložní proxy selhala...`, e); }
             }
         }
 
         if (success && blob) {
             audioBlobs.push(blob);
-        } else {
-            console.error(`Kritické selhání bloku ${i} - všechny cesty selhaly.`);
         }
 
         onProgress((i + 1) / chunks.length);
         
-        // Wait 1 second between chunks to avoid being flagged as bot
+        // Much shorter delay with GAS (100ms)
         if (i < chunks.length - 1) {
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 100));
         }
     }
 
     if (audioBlobs.length === 0) {
-        throw new Error("Nepodařilo se vygenerovat MP3. Servery jsou dočasně přetížené.");
+        throw new Error("Nepodařilo se vygenerovat MP3 soubor.");
     }
 
-    console.log("TtsEngine: Generování dokončeno, spojuji kousky.");
     return new Blob(audioBlobs, { type: 'audio/mpeg' });
   }
 
