@@ -4,12 +4,18 @@ import { collection, query, where, orderBy, onSnapshot, Timestamp, deleteDoc, do
 import { motion, AnimatePresence } from 'framer-motion';
 import { History, FileText, Trash2, Calendar, Loader2, Clock, Pencil, Check, X as XIcon, Eye, Plus, Save, Download, RotateCcw } from 'lucide-react';
 import { TtsEngine } from '../utils/TtsEngine';
+import { exportToPdf, exportToEpub } from '../utils/DocumentExporter';
 
 interface SavedTranscription {
   id: string;
   fileName: string;
   text: string;
   createdAt: Timestamp;
+  metadata?: {
+    title?: string;
+    author?: string;
+    originalName?: string;
+  };
 }
 
 interface SavedTranscriptionsProps {
@@ -385,6 +391,21 @@ export const SavedTranscriptions = ({ userId, onLoadTranscription, ttsEngine, se
                       Generovat Audio
                     </button>
                   )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => exportToPdf(editingText, previewItem.fileName)}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+                  >
+                    <Download className="size-3.5" /> PDF
+                  </button>
+                  <button
+                    onClick={() => exportToEpub(editingText, previewItem.fileName, previewItem.metadata?.author)}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+                  >
+                    <Download className="size-3.5" /> EPUB
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-3 ml-auto">

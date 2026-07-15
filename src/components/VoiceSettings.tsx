@@ -1,4 +1,6 @@
-import { Settings, Loader2, Sparkles } from 'lucide-react';
+import { Settings, Loader2, Sparkles, Mail, Send } from 'lucide-react';
+
+const SHOW_CLOUD_FEATURES = false; // Nastavte na true pro zapnutí odesílání na mail
 
 interface VoiceSettingsProps {
   voices: SpeechSynthesisVoice[];
@@ -10,6 +12,9 @@ interface VoiceSettingsProps {
   onConvert: () => void;
   isProcessing: boolean;
   canConvert: boolean;
+  email: string;
+  onEmailChange: (email: string) => void;
+  onSendToCloud: () => void;
 }
 
 export const VoiceSettings = ({ 
@@ -21,7 +26,10 @@ export const VoiceSettings = ({
   disabled,
   onConvert,
   isProcessing,
-  canConvert
+  canConvert,
+  email,
+  onEmailChange,
+  onSendToCloud
 }: VoiceSettingsProps) => {
   const groupedVoices = voices.reduce((acc, voice) => {
     if (!acc[voice.lang]) acc[voice.lang] = [];
@@ -90,6 +98,35 @@ export const VoiceSettings = ({
         )}
         {isProcessing ? 'Zpracovávám frontu...' : 'Převést na řeč'}
       </button>
+
+      {SHOW_CLOUD_FEATURES && (
+        <div className="flex flex-col gap-2 pt-2 border-t border-primary/5">
+          <label className="text-[10px] font-bold uppercase tracking-wider opacity-40">Zpracovat v cloudu a poslat na mail</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 opacity-40" />
+              <input 
+                type="email"
+                placeholder="Váš e-mail..."
+                value={email}
+                onChange={(e) => onEmailChange(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+            <button 
+              onClick={onSendToCloud}
+              disabled={disabled || !canConvert || !email}
+              className="p-2.5 bg-slate-800 dark:bg-slate-700 text-white rounded-lg hover:bg-slate-900 transition-all disabled:opacity-30 group"
+              title="Optimalizovat AI a poslat na mail"
+            >
+              <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </button>
+          </div>
+          <p className="text-[10px] opacity-40 leading-relaxed">
+            Tato volba text vyčistí pomocí AI a výsledek vám pošle na mail. Můžete pak kartu ihned zavřít.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

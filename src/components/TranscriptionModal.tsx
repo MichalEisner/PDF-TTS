@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, RotateCcw, Download, Trash2, FileText } from 'lucide-react';
+import { X, RotateCcw, Download, Trash2, FileText, FileDown } from 'lucide-react';
+import { exportToPdf, exportToEpub } from '../utils/DocumentExporter';
 import type { QueuedFile } from '../types';
 
 interface TranscriptionModalProps {
@@ -112,6 +113,23 @@ export const TranscriptionModal = ({
             >
               <Trash2 className="w-4 h-4" /> Odstranit soubor
             </button>
+            
+            <div className="flex items-center gap-2">
+              <button 
+                disabled={isProcessing}
+                onClick={() => exportToPdf(file.text, file.file.name)}
+                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-xl transition-all disabled:opacity-30 text-xs font-bold"
+              >
+                <FileDown className="w-4 h-4" /> PDF
+              </button>
+              <button 
+                disabled={isProcessing}
+                onClick={() => exportToEpub(file.text, file.file.name, file.metadata?.author)}
+                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-primary hover:bg-primary/5 rounded-xl transition-all disabled:opacity-30 text-xs font-bold"
+              >
+                <FileDown className="w-4 h-4" /> EPUB
+              </button>
+            </div>
 
             <div className="flex items-center gap-3">
               <button 

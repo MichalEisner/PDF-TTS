@@ -1,6 +1,14 @@
 import JSZip from 'jszip';
 
-export const extractTextFromEpub = async (file: File): Promise<string> => {
+export interface EpubData {
+  text: string;
+  metadata: {
+    title?: string;
+    author?: string;
+  };
+}
+
+export const extractTextFromEpub = async (file: File): Promise<EpubData> => {
   const zip = await JSZip.loadAsync(file);
   
   // 1. Find the rootfile (OPF) from container.xml
@@ -21,6 +29,10 @@ export const extractTextFromEpub = async (file: File): Promise<string> => {
 
   const opfDoc = parser.parseFromString(opfContent, "text/xml");
   
+  // Extrakce metadat
+  const title = opfDoc.querySelector("title")?.textContent || opfDoc.querySelector("dc\\:title")?.textContent || "";
+  const author = opfDoc.querySelector("creator")?.textContent || opfDoc.querySelector("dc\\:creator")?.textContent || "";
+
   // 3. Get manifest items (id -> href)
   const manifestItems: Record<string, string> = {};
   const itemElements = opfDoc.querySelectorAll("manifest > item");
@@ -42,13 +54,37 @@ export const extractTextFromEpub = async (file: File): Promise<string> => {
     }
   });
 
-  // 5. Extract text from each spine item
+  // 5. Pokus se najít navigační dokument (obsah) pro získání názvů kapitol
+  const navItem = Array.from(itemElements).find(el => el.getAttribute("properties")?.includes("nav"));
+  const navHref = navItem?.getAttribute("href");
+  const chapterTitles: Record<string, string> = {};
+
+  if (navHref) {
+    try {
+      const navFile = zip.file(rootDir + navHref);
+      if (navFile) {
+        const navContent = await navFile.async("string");
+        const navDoc = parser.parseFromString(navContent, "text/html");
+        const navLinks = navDoc.querySelectorAll("nav[epub\\:type='toc'] a, nav ol a");
+        navLinks.forEach(link => {
+          const href = link.getAttribute("href")?.split('#')[0]; // Odstranit kotvy
+          if (href) {
+            chapterTitles[href] = link.textContent?.trim() || "";
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("EpubProcessor: Nepodařilo se načíst názvy kapitol z nav.xhtml", e);
+    }
+  }
+
+  // 6. Extract text from each spine item
   let fullText = "";
+  let chapterIndex = 1;
   for (const id of spineItemIds) {
     const relativeHref = manifestItems[id];
     if (!relativeHref) continue;
 
-    // Resolve path relative to OPF root
     const fullHref = rootDir + relativeHref;
     const itemFile = zip.file(fullHref);
     
@@ -56,16 +92,23 @@ export const extractTextFromEpub = async (file: File): Promise<string> => {
       const htmlContent = await itemFile.async("string");
       const htmlDoc = parser.parseFromString(htmlContent, "text/html");
       
-      // Basic text extraction: get body text
-      // We can improve this by removing scripts/styles if necessary
       const body = htmlDoc.body;
       if (body) {
-        // Simple text extraction with newlines for block elements
-        const text = body.innerText || body.textContent || "";
-        fullText += text.trim() + "\n\n";
+        const text = (body.innerText || body.textContent || "").trim();
+        if (text) {
+          // Injekce "Nová kapitola:", pokud tam už není (aby se zachovala struktura při exportu)
+          if (!text.toLowerCase().startsWith("nová kapitola:") && !text.toLowerCase().startsWith("nová podkapitola:")) {
+            const resolvedTitle = chapterTitles[relativeHref] || `Kapitola ${chapterIndex++}`;
+            fullText += `Nová kapitola: ${resolvedTitle}\n\n`;
+          }
+          fullText += text + "\n\n";
+        }
       }
     }
   }
 
-  return fullText.trim();
+  return {
+    text: fullText.trim(),
+    metadata: { title, author }
+  };
 };

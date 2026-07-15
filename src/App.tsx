@@ -12,6 +12,8 @@ import { extractTextFromPdf } from './utils/PdfProcessor';
 import { extractTextFromEpub } from './utils/EpubProcessor';
 import { TtsEngine } from './utils/TtsEngine';
 import { refineTextForTts } from './utils/AiProcessor';
+import { TranslatorSection } from './components/TranslatorSection';
+import { Languages } from 'lucide-react';
 import type { QueuedFile } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
@@ -21,6 +23,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { sendToCloudBackground } from './utils/CloudProcessor';
 
 function App() {
   const [files, setFiles] = useState<QueuedFile[]>([]);
@@ -33,6 +36,8 @@ function App() {
   const [userProfile, setUserProfile] = useState<{ photoURL?: string } | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'tts' | 'translator'>('tts');
+  const [email, setEmail] = useState('');
   
   const ttsEngine = useRef<TtsEngine | null>(null);
 
@@ -45,11 +50,9 @@ function App() {
       
       setVoices(availableVoices);
 
-      // If we only had placeholders or no voice yet, pick a better one
       const isPlaceholder = selectedVoice === 'google-cs' || selectedVoice === 'google-en' || !selectedVoice;
       
       if (isPlaceholder) {
-        // Prefer real system voices over placeholders
         const systemVoice = availableVoices.find(v => v.lang.startsWith('cs') && v.localService) || 
                             availableVoices.find(v => v.lang.startsWith('cs')) ||
                             availableVoices.find(v => v.lang.startsWith('en')) || 
@@ -69,6 +72,9 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser?.email) {
+        setEmail(currentUser.email);
+      }
       if (!currentUser) {
         setUserProfile(null);
       }
@@ -115,25 +121,23 @@ function App() {
 
       try {
         let text = fileItem.text;
+        let metadata: any = null;
+
         if (!text) {
           const isEpub = fileItem.file.name.toLowerCase().endsWith('.epub') || fileItem.file.type === 'application/epub+zip';
           if (isEpub) {
-            console.log(`App: Extrahuji text z EPUB pro soubor ${fileItem.file.name}...`);
-            text = await extractTextFromEpub(fileItem.file);
+            const epubData = await extractTextFromEpub(fileItem.file);
+            text = epubData.text;
+            metadata = epubData.metadata;
           } else {
-            console.log(`App: Extrahuji text z PDF pro soubor ${fileItem.file.name}...`);
             text = await extractTextFromPdf(fileItem.file);
           }
           updateFileStatus(fileItem.id, { text });
         }
 
-        // AI Refinement Step
-        console.log(`App: Spouštím AI optimalizaci pro soubor ${fileItem.file.name}...`);
         const optimizedText = await refineTextForTts(text);
-        console.log(`App: AI optimalizace dokončena, ukládám do profilu a přecházím na TTS.`);
         updateFileStatus(fileItem.id, { text: optimizedText, status: 'ZPRACOVÁVÁM' });
 
-        // Automatic Save to Firestore if user is logged in (BEFORE TTS)
         if (user) {
           try {
             await addDoc(collection(db, 'transcriptions'), {
@@ -142,8 +146,11 @@ function App() {
               fileName: fileItem.file.name,
               text: optimizedText,
               createdAt: serverTimestamp(),
+              metadata: {
+                ...(metadata || {}),
+                originalName: fileItem.file.name
+              }
             });
-            console.log(`App: Soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
           } catch (saveError) {
             console.error("Error auto-saving to profile:", saveError);
           }
@@ -169,6 +176,52 @@ function App() {
     setIsProcessing(false);
   };
 
+  const handleSendQueueToCloud = async () => {
+    if (!email || files.length === 0) return;
+    
+    const pending = files.filter(f => f.status === 'ČEKÁ' || f.status === 'CHYBA');
+    if (pending.length === 0) return;
+
+    for (const fileItem of pending) {
+      try {
+        updateFileStatus(fileItem.id, { status: 'OPTIMALIZUJI' });
+        
+        let text = fileItem.text;
+        let metadata: any = null;
+
+        if (!text) {
+          const isEpub = fileItem.file.name.toLowerCase().endsWith('.epub') || fileItem.file.type === 'application/epub+zip';
+          if (isEpub) {
+            const epubData = await extractTextFromEpub(fileItem.file);
+            text = epubData.text;
+            metadata = epubData.metadata;
+          } else {
+            text = await extractTextFromPdf(fileItem.file);
+          }
+        }
+
+        updateFileStatus(fileItem.id, { status: 'ZPRACOVÁVÁM' });
+        
+        const success = await sendToCloudBackground({
+          text,
+          email,
+          fileName: fileItem.file.name,
+          type: 'TTS',
+          author: metadata?.author
+        });
+
+        if (success) {
+          updateFileStatus(fileItem.id, { status: 'HOTOVO', progress: 100 });
+        } else {
+          updateFileStatus(fileItem.id, { status: 'CHYBA' });
+        }
+      } catch (err) {
+        console.error("Cloud send error:", err);
+        updateFileStatus(fileItem.id, { status: 'CHYBA' });
+      }
+    }
+  };
+
   const handleTextChange = (id: string, text: string) => {
     updateFileStatus(id, { text });
   };
@@ -180,7 +233,6 @@ function App() {
     updateFileStatus(id, { status: 'ZPRACOVÁVÁM', progress: 0 });
 
     try {
-      // Automatic Save to Firestore if user is logged in (BEFORE TTS)
       if (user) {
         try {
           await addDoc(collection(db, 'transcriptions'), {
@@ -190,7 +242,6 @@ function App() {
             text: fileItem.text,
             createdAt: serverTimestamp(),
           });
-          console.log(`App: Regenerovaný soubor ${fileItem.file.name} byl automaticky uložen do profilu.`);
         } catch (saveError) {
           console.error("Error auto-saving to profile:", saveError);
         }
@@ -237,29 +288,41 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-
   const handleLoadSaved = (text: string, fileName: string) => {
     const virtualId = Math.random().toString(36).substring(7);
     const newFile: QueuedFile = {
       id: virtualId,
-      file: { name: fileName, size: 0 } as any, // Mock file object
+      file: { name: fileName, size: 0 } as any,
       text,
       status: 'HOTOVO',
       progress: 100
     };
     setFiles(prev => [...prev, newFile]);
     setEditingFileId(virtualId);
-    
-    // Smooth scroll to top to see the new entry
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const pendingFiles = files.filter(f => f.status === 'ČEKÁ' || f.status === 'ZPRACOVÁVÁM').length;
+  const handleQueueTranslatedForAudio = (text: string, fileName: string) => {
+    const virtualId = Math.random().toString(36).substring(7);
+    const newFile: QueuedFile = {
+      id: virtualId,
+      file: { name: `${fileName}.txt`, size: 0 } as any,
+      text,
+      status: 'ČEKÁ',
+      progress: 0
+    };
+    setFiles(prev => [...prev, newFile]);
+    setActiveTab('tts');
+    setTimeout(() => {
+      window.scrollTo({ top: 400, behavior: 'smooth' });
+    }, 100);
+  };
+
+  const pendingFiles = files.filter(f => f.status === 'ČEKÁ' || f.status === 'ZPRACOVÁVÁM' || f.status === 'OPTIMALIZUJI').length;
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 transition-colors">
       <div className="layout-container flex h-full grow flex-col">
-        {/* Header */}
         <header className="flex items-center justify-between border-b border-primary/10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-6 md:px-20 py-4 sticky top-0 z-50">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center size-10 bg-primary/10 rounded-lg">
@@ -281,7 +344,6 @@ function App() {
         </header>
 
         <main className="flex-1 flex flex-col items-center justify-center px-4 py-12 max-w-5xl mx-auto w-full">
-          {/* Hero Section */}
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -299,44 +361,76 @@ function App() {
             </p>
           </motion.div>
 
-          {/* Main Controls */}
+          <div className="flex bg-slate-100 dark:bg-slate-800/50 p-1 rounded-2xl mb-12 self-center">
+            <button 
+              onClick={() => setActiveTab('tts')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'tts' 
+                  ? 'bg-white dark:bg-slate-700 shadow-lg text-primary scale-[1.02]' 
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Audio Převodník
+            </button>
+            <button 
+              onClick={() => setActiveTab('translator')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'translator' 
+                  ? 'bg-white dark:bg-slate-700 shadow-lg text-primary scale-[1.02]' 
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Languages className="w-4 h-4" />
+              AI Překladač
+            </button>
+          </div>
+
           <div className="w-full space-y-12">
-            <FileUploader onFilesSelect={handleFilesSelect} />
+            {activeTab === 'tts' ? (
+              <>
+                <FileUploader onFilesSelect={handleFilesSelect} />
 
-            <AnimatePresence>
-              {files.length > 0 && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-8"
-                >
-                  <div className="lg:col-span-12 xl:col-span-5">
-                    <VoiceSettings 
-                      voices={voices}
-                      selectedVoice={selectedVoice}
-                      onVoiceChange={setSelectedVoice}
-                      speed={speed}
-                      onSpeedChange={setSpeed}
-                      onConvert={processQueue}
-                      isProcessing={isProcessing}
-                      disabled={isProcessing}
-                      canConvert={pendingFiles > 0}
-                    />
-                  </div>
-                  
-                  <div className="lg:col-span-12 xl:col-span-7">
-                    <ResultsSection 
-                      files={files}
-                      onDelete={handleRemoveFile}
-                      onDownload={handleDownloadMp3}
-                      onOpenEdit={handleOpenEdit}
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                <AnimatePresence>
+                  {files.length > 0 && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+                    >
+                      <div className="lg:col-span-12 xl:col-span-5">
+                        <VoiceSettings 
+                          voices={voices}
+                          selectedVoice={selectedVoice}
+                          onVoiceChange={setSelectedVoice}
+                          speed={speed}
+                          onSpeedChange={setSpeed}
+                          onConvert={processQueue}
+                          isProcessing={isProcessing}
+                          disabled={isProcessing}
+                          canConvert={pendingFiles > 0}
+                          email={email}
+                          onEmailChange={setEmail}
+                          onSendToCloud={handleSendQueueToCloud}
+                        />
+                      </div>
+                      
+                      <div className="lg:col-span-12 xl:col-span-7">
+                        <ResultsSection 
+                          files={files}
+                          onDelete={handleRemoveFile}
+                          onDownload={handleDownloadMp3}
+                          onOpenEdit={handleOpenEdit}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            ) : (
+              <TranslatorSection onQueueForAudio={handleQueueTranslatedForAudio} />
+            )}
 
-            {/* History Section */}
             {user && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -361,7 +455,6 @@ function App() {
         </main>
       </div>
 
-      {/* Overlays */}
       <TranscriptionModal 
         file={files.find(f => f.id === editingFileId) || null}
         onClose={() => setEditingFileId(null)}

@@ -19,6 +19,8 @@
     "clsx": "^2.1.1",
     "firebase": "^12.10.0",
     "framer-motion": "^12.36.0",
+    "html2pdf.js": "^0.14.0",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lamejs": "^1.2.1",
     "lucide-react": "^0.577.0",
